@@ -1,9 +1,16 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace ServerScreenViewer;
 
 internal sealed class HostForm : Form
 {
+    private const uint WDA_NONE = 0x00000000;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
+
     private readonly AppConfig _config;
     private readonly WebHostService _server;
     private readonly Label _statusLabel;
@@ -99,6 +106,12 @@ internal sealed class HostForm : Form
 
         Shown += OnShownAsync;
         FormClosing += OnFormClosing;
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        SetWindowDisplayAffinity(Handle, WDA_NONE);
     }
 
     private async void OnShownAsync(object? sender, EventArgs e)
