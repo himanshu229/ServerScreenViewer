@@ -15,7 +15,7 @@ The optional start-at-logon task is created for the Windows user who runs the in
 - Windows Forms host on .NET 8
 - Browser-based screen viewer; no viewer-side installation
 - Entire virtual desktop or one selected monitor
-- Random 48-character access key generated on first run
+- Random six-digit access code generated on first run, with temporary lockout after repeated incorrect attempts
 - Optional TLS using a PFX certificate
 - Configurable taskbar, minimized-start, and notification-area behavior
 - PowerShell build, install, and uninstall scripts
@@ -153,12 +153,32 @@ Only one instance can run in a Windows session. Starting it again displays an al
 ## First run and browser access
 
 1. Start `ServerScreenViewer.exe`. The installer does this automatically.
-2. The application creates `%LOCALAPPDATA%\ServerScreenViewer\appsettings.json` for the user running it and generates a unique access key.
+2. The application creates `%LOCALAPPDATA%\ServerScreenViewer\appsettings.json` for the user running it and generates a random six-digit access code.
 3. In the **Server Screen Viewer** host window, select **Open viewer** for local testing.
-4. Sign in to the browser viewer with the access key shown in the host window. **Copy access key** copies it to the clipboard.
+4. Sign in to the browser viewer with the access code shown in the host window. **Copy access key** copies it to the clipboard. Five incorrect codes from one device temporarily block further attempts for 15 minutes.
 5. For remote use, configure a VPN/tunnel or TLS before exposing the listener.
 
 The default local URL is `http://127.0.0.1:8787/`.
+
+## View from another device on the same network
+
+For a trusted private network only, stop the application and edit `%LOCALAPPDATA%\ServerScreenViewer\appsettings.json` to set:
+
+```json
+{
+  "BindAddress": "0.0.0.0",
+  "AllowInsecureRemote": true
+}
+```
+
+Keep the other settings in the file. Restart the application; its host window shows the viewer URL to open on the other device. If Windows Firewall blocks the connection, run this once in an elevated PowerShell window:
+
+```powershell
+New-NetFirewallRule -DisplayName 'Server Screen Viewer LAN' `
+  -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8787 -Profile Private
+```
+
+The LAN option uses HTTP, so the access code and screen are not encrypted in transit. Use it only on a trusted private network, never on public or guest Wi-Fi. For stronger protection, use the HTTPS or VPN options below.
 
 ## Stop the application
 
@@ -347,7 +367,7 @@ A non-loopback listener without a certificate is blocked by default. Setting `Al
 | `AllowInsecureRemote` | `false` | Explicitly permits non-loopback HTTP. |
 | `CertificatePath` | empty | PFX path; enables HTTPS when set. |
 | `CertificatePassword` | empty | PFX password; the environment variable is preferred. |
-| `ApiKey` | generated | Access key; stop the app and replace it to rotate credentials. |
+| `ApiKey` | generated | Six-digit access code; the app replaces values that are not exactly six digits when it starts. |
 
 Configuration changes take effect after the application is restarted.
 

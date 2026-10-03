@@ -38,7 +38,7 @@ internal sealed class HostForm : Form
             Margin = new Padding(0, 0, 0, 18)
         };
         var urlLabel = MakeValueLabel("Viewer URL", _config.ViewerUrl);
-        var keyLabel = MakeValueLabel("Access key", _config.ApiKey);
+        var keyLabel = MakeValueLabel("6-digit access code", _config.ApiKey);
         var modeLabel = MakeValueLabel("Taskbar mode", _config.HideFromTaskbar ? "Hidden (tray access remains available)" : "Visible");
         var note = new Label
         {

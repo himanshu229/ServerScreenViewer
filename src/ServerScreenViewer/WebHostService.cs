@@ -12,8 +12,11 @@ namespace ServerScreenViewer;
 internal sealed class WebHostService : IAsyncDisposable
 {
     private const string SessionCookie = "ssv_session";
+    private const int MaxFailedLoginAttempts = 5;
+    private static readonly TimeSpan LoginLockoutDuration = TimeSpan.FromMinutes(15);
     private readonly AppConfig _config;
     private readonly ConcurrentDictionary<string, DateTimeOffset> _sessions = new();
+    private readonly ConcurrentDictionary<string, LoginAttemptState> _failedLogins = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _captureLock = new(1, 1);
     private WebApplication? _app;
 
@@ -72,13 +75,22 @@ internal sealed class WebHostService : IAsyncDisposable
             if (!context.Request.HasFormContentType)
                 return Results.BadRequest("Expected form data.");
 
+            var clientAddress = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (IsLoginBlocked(clientAddress, out var retryAfter))
+            {
+                context.Response.Headers["Retry-After"] = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+                return Results.Content(HtmlPages.Login("Too many incorrect codes. Try again in 15 minutes."), "text/html; charset=utf-8", statusCode: StatusCodes.Status429TooManyRequests);
+            }
+
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             if (!SecureEquals(form["key"].ToString(), _config.ApiKey))
             {
+                RecordFailedLogin(clientAddress);
                 await Task.Delay(350, context.RequestAborted);
-                return Results.Content(HtmlPages.Login("The access key is not valid."), "text/html; charset=utf-8", statusCode: StatusCodes.Status401Unauthorized);
+                return Results.Content(HtmlPages.Login("The access code is not valid."), "text/html; charset=utf-8", statusCode: StatusCodes.Status401Unauthorized);
             }
 
+            _failedLogins.TryRemove(clientAddress, out _);
             var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             var expires = DateTimeOffset.UtcNow.AddMinutes(_config.SessionMinutes);
             _sessions[token] = expires;
@@ -157,6 +169,33 @@ internal sealed class WebHostService : IAsyncDisposable
         }
         return true;
     }
+
+    private bool IsLoginBlocked(string clientAddress, out TimeSpan retryAfter)
+    {
+        retryAfter = TimeSpan.Zero;
+        if (!_failedLogins.TryGetValue(clientAddress, out var state))
+            return false;
+
+        retryAfter = state.LockedUntil - DateTimeOffset.UtcNow;
+        if (retryAfter > TimeSpan.Zero)
+            return true;
+
+        if (state.LockedUntil != default)
+            _failedLogins.TryRemove(clientAddress, out _);
+        return false;
+    }
+
+    private void RecordFailedLogin(string clientAddress)
+    {
+        _failedLogins.AddOrUpdate(
+            clientAddress,
+            _ => new LoginAttemptState(1, default),
+            (_, state) => state.FailedAttempts + 1 >= MaxFailedLoginAttempts
+                ? new LoginAttemptState(MaxFailedLoginAttempts, DateTimeOffset.UtcNow.Add(LoginLockoutDuration))
+                : new LoginAttemptState(state.FailedAttempts + 1, default));
+    }
+
+    private sealed record LoginAttemptState(int FailedAttempts, DateTimeOffset LockedUntil);
 
     private static bool SecureEquals(string supplied, string expected)
     {

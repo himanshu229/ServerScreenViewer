@@ -16,11 +16,11 @@ internal static class HtmlPages
 <body>
   <main class="card">
     <h1>Server Screen Viewer</h1>
-    <p class="muted">Enter the access key shown in the host application.</p>
+    <p class="muted">Enter the 6-digit access code shown in the host application.</p>
     {{(string.IsNullOrEmpty(error) ? string.Empty : $"<div class=\"error\">{System.Net.WebUtility.HtmlEncode(error)}</div>")}}
     <form method="post" action="/login">
-      <label for="key">Access key</label>
-      <input id="key" name="key" type="password" autocomplete="current-password" required autofocus>
+      <label for="key">6-digit access code</label>
+      <input id="key" name="key" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" required autofocus>
       <button type="submit">View screen</button>
     </form>
   </main>

@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Security.Cryptography;
+using System.Net.Sockets;
 using System.Text.Json;
 
 namespace ServerScreenViewer;
@@ -26,8 +28,7 @@ internal sealed class AppConfig
 
     private string DisplayHost => BindAddress switch
     {
-        "0.0.0.0" => "localhost",
-        "::" => "localhost",
+        "0.0.0.0" or "::" => GetLanAddress()?.ToString() ?? "localhost",
         _ => BindAddress
     };
 
@@ -48,9 +49,9 @@ internal sealed class AppConfig
         }
 
         var changed = false;
-        if (string.IsNullOrWhiteSpace(config.ApiKey) || config.ApiKey == "CHANGE_ME")
+        if (!IsSixDigitCode(config.ApiKey))
         {
-            config.ApiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+            config.ApiKey = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
             changed = true;
         }
 
@@ -98,4 +99,24 @@ internal sealed class AppConfig
         WriteIndented = true,
         PropertyNameCaseInsensitive = true
     };
+
+    private static bool IsSixDigitCode(string? value) =>
+        value is { Length: 6 } && value.All(character => character is >= '0' and <= '9');
+
+    private static IPAddress? GetLanAddress() => NetworkInterface.GetAllNetworkInterfaces()
+        .Where(networkInterface => networkInterface.OperationalStatus == OperationalStatus.Up
+            && networkInterface.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+        .SelectMany(networkInterface => networkInterface.GetIPProperties().UnicastAddresses)
+        .Select(address => address.Address)
+        .Where(address => address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+        .OrderByDescending(IsPrivateNetworkAddress)
+        .FirstOrDefault();
+
+    private static bool IsPrivateNetworkAddress(IPAddress address)
+    {
+        var bytes = address.GetAddressBytes();
+        return bytes[0] == 10
+            || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
+            || (bytes[0] == 192 && bytes[1] == 168);
+    }
 }
